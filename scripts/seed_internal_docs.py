@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed internal example documents into the configured Elastic index.
+Seed internal example documents into the `internal-docs` Elastic index.
 
 Usage:
     python scripts/seed_internal_docs.py
@@ -25,7 +25,7 @@ def load_settings() -> Dict[str, str]:
 
     settings = {
         "url": os.getenv("ELASTIC_URL"),
-        "index": os.getenv("ELASTIC_INDEX", "internal-docs"),
+        "index": "internal-docs",
         "api_key": os.getenv("ELASTIC_API_KEY"),
     }
 

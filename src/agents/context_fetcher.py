@@ -25,7 +25,7 @@ class ElasticContextFetcher:
         self.api_key = api_key or os.getenv("ELASTIC_API_KEY")
         self.username = username or os.getenv("ELASTIC_USERNAME")
         self.password = password or os.getenv("ELASTIC_PASSWORD")
-        self.index = index or os.getenv("ELASTIC_INDEX", "compliance-docs")
+        self.index = index or "internal-docs"
 
         if not self.base_url:
             raise ValueError(
@@ -71,6 +71,9 @@ class ElasticContextFetcher:
                     "title": source.get("title"),
                     "body": source.get("body"),
                     "tags": source.get("tags", []),
+                    "category": source.get("category"),
+                    "source": source.get("source"),
+                    "last_updated": source.get("last_updated"),
                     "score": hit.get("_score"),
                     "highlight": hit.get("highlight", {}).get("body", []),
                 }
@@ -79,11 +82,11 @@ class ElasticContextFetcher:
         return documents
 
 
-def safe_fetch(prompt: str, *, limit: int = 3) -> List[Dict[str, Any]]:
+def safe_fetch(prompt: str, *, limit: int = 3, index: str = "internal-docs") -> List[Dict[str, Any]]:
     """Wrapper that swallows Elasticsearch errors and returns an empty list."""
 
     try:
-        fetcher = ElasticContextFetcher()
+        fetcher = ElasticContextFetcher(index=index)
         return fetcher.fetch(prompt, limit=limit)
     except Exception:
         return []

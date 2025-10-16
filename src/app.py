@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -59,6 +59,7 @@ class MetaAgentResponse(BaseModel):
     recommendation: Dict[str, Any]
     judge: Dict[str, Any]
     context: Dict[str, Any]
+    test_runs: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 @app.get("/", include_in_schema=False, response_class=HTMLResponse)
@@ -101,29 +102,46 @@ def meta_agent(request: MetaAgentRequest) -> MetaAgentResponse:
     """Run the full pipeline using Elastic, Claude, and Mixtral."""
 
     try:
-        fetcher = ElasticContextFetcher()
+        fetcher = ElasticContextFetcher(index="internal-docs")
         elastic_docs = fetcher.fetch(request.prompt, limit=request.max_context)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
         # Fall back to safe fetch which will handle credentials issues gracefully.
-        elastic_docs = safe_fetch(request.prompt, limit=request.max_context)
+        elastic_docs = safe_fetch(request.prompt, limit=request.max_context, index="internal-docs")
+
+    try:
+        attribute_fetcher = ElasticContextFetcher(index="model-attributes")
+        model_attribute_docs = attribute_fetcher.fetch(request.prompt, limit=5)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        model_attribute_docs = safe_fetch(request.prompt, limit=5, index="model-attributes")
 
     research_docs = ResearchFetcher().fetch(request.prompt)
-    context = aggregate(elastic_docs, research_docs)
+    context = aggregate(elastic_docs, research_docs, model_attribute_docs)
 
     selector = ModelSelector()
     recommendation = selector.choose_model(
-        request.prompt, request.requirements.model_dump(), context
+        request.prompt, request.requirements.model_dump(), context, model_attribute_docs
     )
+    candidate_models = recommendation.get("candidate_models", [])
+    test_runs = selector.run_test_models(candidate_models, fallback_prompt=request.prompt)
 
     judge = Judge()
-    evaluation = judge.evaluate(request.prompt, recommendation, context)
+    evaluation = judge.evaluate(
+        request.prompt,
+        recommendation,
+        context,
+        candidate_models=candidate_models,
+        candidate_outputs=test_runs,
+    )
 
     return MetaAgentResponse(
         recommendation=recommendation,
         judge=evaluation,
         context=context,
+        test_runs=test_runs,
     )
 
 

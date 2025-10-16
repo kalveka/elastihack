@@ -27,11 +27,13 @@ The interactive OpenAPI docs are available at <http://localhost:8000/docs>.
 | Variable | Description |
 | --- | --- |
 | `ELASTIC_URL` | Base URL for your ElasticSearch cluster (e.g. `https://example.es.amazonaws.com`) |
-| `ELASTIC_INDEX` | Index containing compliance material. Defaults to `compliance-docs`. |
 | `ELASTIC_API_KEY` | Optional API key for Elastic. |
 | `ELASTIC_USERNAME` / `ELASTIC_PASSWORD` | Optional basic auth credentials. |
 | `BEDROCK_REGION` | AWS region hosting Bedrock (defaults to `us-east-1`). |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials for Bedrock access. |
+
+The service expects two Elastic indexes to be present: `internal-docs` for compliance
+context and `model-attributes` for catalog metadata that informs model selection.
 
 When AWS credentials are not supplied the application falls back to deterministic
 stub responses, making it safe to demo without cloud access.
