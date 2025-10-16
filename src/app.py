@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from agents.context_fetcher import ElasticContextFetcher, safe_fetch
@@ -17,7 +21,16 @@ from agents.research_fetcher import ResearchFetcher
 
 load_dotenv()
 
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATE_DIR = BASE_DIR / "templates"
+
 app = FastAPI(title="Azion Meta-Agent", version="0.1.0")
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 
 class RequirementProfile(BaseModel):
@@ -48,11 +61,18 @@ class MetaAgentResponse(BaseModel):
     context: Dict[str, Any]
 
 
-@app.get("/", include_in_schema=False)
-def root() -> Dict[str, str]:
-    return {
-        "message": "Azion Meta-Agent service is running. Visit /docs for interactive documentation."
-    }
+@app.get("/", include_in_schema=False, response_class=HTMLResponse)
+def root(request: Request) -> HTMLResponse:
+    if not TEMPLATE_DIR.exists():
+        return HTMLResponse(
+            content=(
+                "Azion Meta-Agent service is running. "
+                "Templates directory not found; visit /docs for API interaction."
+            ),
+            status_code=200,
+        )
+
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/meta-agent", include_in_schema=False)

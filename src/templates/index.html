@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azion Meta-Agent Console</title>
+    <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <header class="app__header">
+            <div class="branding">
+                <div class="branding__icon">A</div>
+                <div>
+                    <h1>Azion Meta-Agent</h1>
+                    <p>Compliance-aware model selection with Elastic context.</p>
+                </div>
+            </div>
+            <button id="openDocs" class="outline-button" type="button">
+                API Docs
+            </button>
+        </header>
+
+        <main id="conversation" class="conversation" aria-live="polite">
+            <div class="message message--agent">
+                <div class="message__avatar">A</div>
+                <div class="message__content">
+                    <div class="message__body">
+                        <p>Welcome! I can analyze your prompt, pull relevant compliance context, and recommend the right Bedrock model. Share your workload to get started.</p>
+                    </div>
+                    <div class="message__meta">
+                        Powered by Claude 3 Sonnet and Mixtral 8x7B.
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <form id="promptForm" class="composer" autocomplete="off">
+            <label class="composer__label" for="promptInput">Prompt</label>
+            <textarea id="promptInput" name="prompt" rows="3" required placeholder="Describe the task you need help with..."></textarea>
+
+            <details class="composer__details">
+                <summary>Advanced requirements</summary>
+
+                <div class="field-grid">
+                    <label>
+                        Industry
+                        <input type="text" name="industry" placeholder="e.g. finance">
+                    </label>
+                    <label>
+                        Data sensitivity
+                        <select name="data_sensitivity">
+                            <option value="internal" selected>Internal</option>
+                            <option value="restricted">Restricted</option>
+                            <option value="confidential">Confidential</option>
+                            <option value="public">Public</option>
+                        </select>
+                    </label>
+                    <label>
+                        Budget tier
+                        <select name="budget_tier">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                    </label>
+                    <label>
+                        Latency tolerance (ms)
+                        <input type="number" name="latency_tolerance_ms" min="0" step="50" placeholder="e.g. 500">
+                    </label>
+                    <label class="field-grid__full">
+                        Regulatory frameworks
+                        <input type="text" name="regulatory_frameworks" placeholder="Comma-separated e.g. GDPR, HIPAA">
+                    </label>
+                    <label class="field-grid__full">
+                        Max context docs
+                        <input type="number" name="max_context" min="1" max="10" value="3">
+                    </label>
+                </div>
+            </details>
+
+            <div class="composer__actions">
+                <button id="submitPrompt" type="submit" class="primary-button">
+                    Send
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <template id="messageTemplate">
+        <div class="message">
+            <div class="message__avatar"></div>
+            <div class="message__content">
+                <div class="message__body"></div>
+                <div class="message__meta"></div>
+            </div>
+        </div>
+    </template>
+
+    <script src="{{ request.url_for('static', path='app.js') }}" defer></script>
+</body>
+</html>
