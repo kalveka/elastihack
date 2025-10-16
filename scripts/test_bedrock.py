@@ -20,7 +20,7 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agents.bedrock_client import invoke_with_fallback
+from agents.bedrock_client import BedrockClient, BedrockInvocationError, invoke_with_fallback
 
 
 DEFAULT_MODEL_ID = "anthropic.claude-3-sonnet-20240229-v1:0"
@@ -71,6 +71,13 @@ def _invoke(model_id: str, prompt: str, temperature: float) -> Dict[str, Any]:
     return invoke_with_fallback(model_id, prompt, temperature=temperature)
 
 
+def _list_models() -> list[Dict[str, Any]]:
+    """Call the Bedrock catalog and return the foundation model list."""
+
+    client = BedrockClient()
+    return client.list_available_models()
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Probe AWS Bedrock connectivity.")
     parser.add_argument(
@@ -100,6 +107,28 @@ def main(argv: list[str]) -> int:
     _load_env(args.dotenv)
     _print_env_overview()
 
+    print("Listing available Bedrock foundation models...")
+    list_success = True
+    try:
+        catalog = _list_models()
+        total = len(catalog)
+        print(f"  Catalog size: {total}")
+        if total:
+            print("  Sample models:")
+            for entry in catalog[:5]:
+                if not isinstance(entry, dict):
+                    continue
+                model_id = entry.get("modelId") or entry.get("modelArn") or "<unknown>"
+                model_name = entry.get("modelName") or entry.get("providerName") or "<unnamed>"
+                print(f"    - {model_name} ({model_id})")
+    except BedrockInvocationError as exc:
+        list_success = False
+        print(f"  ERROR: Unable to list foundation models: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive
+        list_success = False
+        print(f"  ERROR: Unexpected failure listing foundation models: {exc}")
+
+    print()
     print(f"Invoking Bedrock model: {args.model_id}")
     response = _invoke(args.model_id, args.prompt, temperature=args.temperature)
     text = response.get("output", {}).get("text", "")
@@ -114,15 +143,19 @@ def main(argv: list[str]) -> int:
         print("  Usage: <missing>")
     print(f"  Output text:\n{text}\n")
 
-    if not has_raw or text.strip() == FALLBACK_MESSAGE:
+    invocation_success = has_raw and text.strip() != FALLBACK_MESSAGE
+    if not invocation_success:
         print(
             "Bedrock invocation appears to have fallen back to the offline stub.\n"
             "Verify your AWS credentials, permissions, and network connectivity."
         )
-        return 1
+    else:
+        print("Bedrock invocation succeeded.")
 
-    print("Bedrock invocation succeeded.")
-    return 0
+    if invocation_success and list_success:
+        return 0
+
+    return 1
 
 
 if __name__ == "__main__":
