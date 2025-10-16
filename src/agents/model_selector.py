@@ -352,6 +352,18 @@ def _prepare_candidates(
     return candidates
 
 
+def _compose_sample_prompt(user_prompt: str) -> str:
+    """Generate a compliance-focused sample prompt derived from the user request."""
+
+    return (
+        f"{user_prompt.strip()}\n\n"
+        "When responding, provide:\n"
+        "1. Compliance guardrails and risk mitigations that apply.\n"
+        "2. Relevant industry or regional regulatory obligations.\n"
+        "3. Quality assurance steps before deployment."
+    )
+
+
 def _default_recommendation(
     prompt: str,
     candidates: List[Dict[str, Any]],
@@ -359,72 +371,59 @@ def _default_recommendation(
     bedrock_error: Optional[str] = None,
     catalog_count: int = 0,
 ) -> Dict[str, Any]:
-    """Fallback structure when Bedrock is unreachable or returns invalid JSON."""
+    """Fallback structure populated from Bedrock catalog metadata."""
 
-    top_candidates = []
-    for index, candidate in enumerate(candidates[:3]):
+    def _describe_candidate(candidate: Dict[str, Any], position: int) -> Dict[str, Any]:
         model_id = candidate.get("id") or candidate.get("model_id")
-        model_name = candidate.get("name") or candidate.get("model_name") or f"Model {index + 1}"
-        top_candidates.append(
-            {
-                "model_id": model_id,
-                "model_name": model_name,
-                "sample_prompt": prompt,
-                "reasoning": "Fallback prompt reused due to Bedrock unavailability.",
-                "policy_notes": [
-                    "Validate compliance assumptions manually before production use."
-                ],
-            }
+        model_name = candidate.get("name") or candidate.get("model_name") or f"Model {position}"
+        provider = candidate.get("provider") or "Unknown provider"
+        strengths = candidate.get("strengths") or []
+        strengths_text = ", ".join(strengths) if strengths else "general capabilities"
+        reasoning = (
+            f"Heuristic selection based on Bedrock metadata. Provider: {provider}. "
+            f"Known strengths: {strengths_text}."
         )
+        policy_notes = [
+            "Review Bedrock catalog metadata and internal policies before production use.",
+            "Validate the model against compliance and safety benchmarks relevant to this workload.",
+        ]
 
-    existing_ids = {item["model_id"] for item in top_candidates}
-    for default in DEFAULT_CANDIDATES:
-        if len(top_candidates) >= 3:
-            break
-        if default["id"] in existing_ids:
-            continue
-        top_candidates.append(
-            {
-                "model_id": default["id"],
-                "model_name": default["name"],
-                "sample_prompt": prompt,
-                "reasoning": "Default candidate provided to ensure evaluation coverage.",
-                "policy_notes": [
-                    "Review catalog metadata manually because default candidate was injected."
-                ],
-            }
-        )
-        existing_ids.add(default["id"])
+        return {
+            "model_id": model_id,
+            "model_name": model_name,
+            "sample_prompt": _compose_sample_prompt(prompt),
+            "reasoning": reasoning,
+            "policy_notes": policy_notes,
+        }
 
-    recommended = top_candidates[0] if top_candidates else {
-        "model_id": DEFAULT_CANDIDATES[0]["id"],
-        "model_name": DEFAULT_CANDIDATES[0]["name"],
-        "sample_prompt": prompt,
-        "reasoning": "Defaulting to Claude 3 Sonnet for balanced governance performance.",
-        "policy_notes": [
-            "Fallback triggered because Bedrock invocation failed; verify manually."
-        ],
-    }
+    heuristic_candidates = [
+        _describe_candidate(candidate, index + 1) for index, candidate in enumerate(candidates[:3])
+    ]
+
+    if not heuristic_candidates:
+        heuristic_candidates = [_describe_candidate(default, index + 1) for index, default in enumerate(DEFAULT_CANDIDATES[:3])]
+
+    recommended = heuristic_candidates[0]
 
     governance_notes = [
-        "Bedrock invocation failed; ensure catalog recommendations are reviewed manually."
+        "Model selector JSON parsing failed; returning heuristic ranking based on Bedrock catalog metadata."
     ]
     if bedrock_error:
-        governance_notes.append(f"Bedrock catalog unavailable: {bedrock_error}")
+        governance_notes.append(f"Bedrock catalog warning: {bedrock_error}")
 
     fallback_payload = {
-        "candidate_models": top_candidates,
+        "candidate_models": heuristic_candidates,
         "recommended_model": {
             "model_id": recommended["model_id"],
             "model_name": recommended["model_name"],
             "reasoning": recommended["reasoning"],
-            "alignment": "Fallback selection prioritizing governance coverage.",
+            "alignment": "Heuristic selection prioritizing governance alignment and provider reputation.",
         },
         "governance_notes": governance_notes,
     }
     fallback_payload["bedrock_status"] = {
         "catalog_count": catalog_count,
-        "error": bedrock_error or "unavailable",
+        "error": bedrock_error,
     }
     return fallback_payload
 

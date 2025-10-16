@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+import re
+from typing import Any, Dict, List, Optional
 
 from .bedrock_client import invoke_with_fallback
 
@@ -25,6 +26,46 @@ Model Selection:\n{selection}\n
 Candidate Models:\n{candidate_models}\n
 Candidate Outputs:\n{candidate_outputs}\n
 Compliance Context:\n{context}\n""".strip()
+
+
+CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_json_response(payload: str) -> Optional[Dict[str, Any]]:
+    """Best-effort parsing for Mixtral responses that may wrap JSON in prose."""
+
+    if not isinstance(payload, str):
+        return None
+
+    # Attempt direct parse first.
+    try:
+        direct = json.loads(payload)
+        if isinstance(direct, dict):
+            return direct
+    except json.JSONDecodeError:
+        pass
+
+    # Check fenced code blocks.
+    match = CODE_BLOCK_PATTERN.search(payload)
+    candidate = match.group(1) if match else payload
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(candidate):
+        if char not in "{[":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(candidate, index)
+        except json.JSONDecodeError:
+            continue
+
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            # Some outputs provide an array with the object as the first element.
+            for item in parsed:
+                if isinstance(item, dict):
+                    return item
+    return None
 
 
 class Judge:
@@ -89,23 +130,28 @@ class Judge:
                 "recommended_model": default_recommended,
             }
 
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
+        parsed = _parse_json_response(text)
+        if not isinstance(parsed, dict):
             return {
                 "verdict": "caution",
                 "risks": [
                     "Mixtral returned non-JSON output. Double-check compliance dependencies."
                 ],
-                "suggestions": [text],
+                "suggestions": [
+                    "Inspect the raw Mixtral output for compliance signals.",
+                    text,
+                ],
                 "top_models": default_top,
                 "recommended_model": default_recommended,
             }
 
-        if "top_models" not in parsed:
+        if "top_models" not in parsed or not isinstance(parsed["top_models"], list):
             parsed["top_models"] = default_top
 
-        if "recommended_model" not in parsed:
+        if (
+            "recommended_model" not in parsed
+            or not isinstance(parsed["recommended_model"], dict)
+        ):
             parsed["recommended_model"] = default_recommended
 
         return parsed

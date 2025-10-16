@@ -393,7 +393,7 @@
 
         const placeholder = addMessage("agent", [
             "Processing your request...",
-            "Fetching context from Elastic and research providers.",
+            "Fetching context from Elastic and testing Berock models.",
         ]);
 
         try {
