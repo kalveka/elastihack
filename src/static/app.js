@@ -205,21 +205,83 @@
             return createSection("Recommendation", ["No recommendation returned."]);
         }
 
+        const recommended = rec.recommended_model && typeof rec.recommended_model === "object"
+            ? rec.recommended_model
+            : rec;
+
         const nodes = [];
         const headline = document.createElement("p");
-        const modelName = rec.model_name || "Unknown model";
-        headline.innerHTML = `<strong>${modelName}</strong>${rec.model_id ? ` · <code>${rec.model_id}</code>` : ""}`;
+        const modelName = recommended.model_name || rec.model_name || "Unknown model";
+        const modelId = recommended.model_id || rec.model_id;
+        headline.innerHTML = `<strong>${modelName}</strong>${modelId ? ` · <code>${modelId}</code>` : ""}`;
         nodes.push(headline);
 
-        if (rec.reasoning) {
+        if (recommended.reasoning) {
             const rationale = document.createElement("p");
-            rationale.textContent = rec.reasoning;
+            rationale.textContent = recommended.reasoning;
             nodes.push(rationale);
         }
 
-        const notes = formatArray(rec.policy_notes);
-        if (notes) {
-            nodes.push(notes);
+        if (recommended.alignment) {
+            const alignment = document.createElement("p");
+            alignment.textContent = `Alignment: ${recommended.alignment}`;
+            nodes.push(alignment);
+        }
+
+        if (Array.isArray(rec.governance_notes) && rec.governance_notes.length > 0) {
+            const heading = document.createElement("p");
+            heading.innerHTML = "<strong>Governance notes</strong>";
+            nodes.push(heading);
+            const governanceList = formatArray(rec.governance_notes);
+            if (governanceList) {
+                nodes.push(governanceList);
+            }
+        }
+
+        if (Array.isArray(rec.candidate_models) && rec.candidate_models.length > 0) {
+            const heading = document.createElement("p");
+            heading.innerHTML = "<strong>Candidate models</strong>";
+            nodes.push(heading);
+            const list = document.createElement("ul");
+            rec.candidate_models.slice(0, 3).forEach((candidate) => {
+                if (!candidate || typeof candidate !== "object") {
+                    return;
+                }
+                const item = document.createElement("li");
+                const name = candidate.model_name || candidate.name || candidate.model_id || "Candidate";
+                const id = candidate.model_id || candidate.id;
+                const titleParts = [`${name}`];
+                if (id) {
+                    titleParts.push(`<code>${id}</code>`);
+                }
+                item.innerHTML = titleParts.join(" · ");
+                if (candidate.reasoning) {
+                    const rationale = document.createElement("p");
+                    rationale.textContent = candidate.reasoning;
+                    item.appendChild(rationale);
+                }
+                if (Array.isArray(candidate.policy_notes) && candidate.policy_notes.length > 0) {
+                    const policyLabel = document.createElement("p");
+                    policyLabel.innerHTML = "<em>Policy notes</em>";
+                    item.appendChild(policyLabel);
+                    const notesList = formatArray(candidate.policy_notes);
+                    if (notesList) {
+                        item.appendChild(notesList);
+                    }
+                }
+                list.appendChild(item);
+            });
+            nodes.push(list);
+        }
+
+        if (rec.bedrock_status && typeof rec.bedrock_status === "object") {
+            const { catalog_count: catalogCount, error } = rec.bedrock_status;
+            const status = document.createElement("p");
+            const countText = typeof catalogCount === "number"
+                ? `${catalogCount} model${catalogCount === 1 ? "" : "s"} detected`
+                : "Model catalog unavailable";
+            status.innerHTML = `<em>Bedrock status:</em> ${countText}${error ? ` — ${error}` : ""}`;
+            nodes.push(status);
         }
 
         return createSection("Recommendation", nodes);

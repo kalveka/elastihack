@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
@@ -19,11 +19,12 @@ class BedrockClient:
 
     def __init__(self, *, region_name: Optional[str] = None) -> None:
         self.region_name = region_name or os.getenv("BEDROCK_REGION") or "us-east-1"
-        self._client = boto3.client("bedrock-runtime", region_name=self.region_name)
+        self._runtime_client = boto3.client("bedrock-runtime", region_name=self.region_name)
+        self._management_client = boto3.client("bedrock", region_name=self.region_name)
 
     def invoke(self, model_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            response = self._client.invoke_model(  # type: ignore[attr-defined]
+            response = self._runtime_client.invoke_model(  # type: ignore[attr-defined]
                 modelId=model_id,
                 body=json.dumps(payload).encode("utf-8"),
                 accept="application/json",
@@ -38,6 +39,28 @@ class BedrockClient:
         else:
             data = body
         return json.loads(data)
+
+    def list_available_models(self) -> List[Dict[str, Any]]:
+        """Return the available Bedrock foundation models."""
+
+        try:
+            models: List[Dict[str, Any]] = []
+            next_token: Optional[str] = None
+            while True:
+                kwargs: Dict[str, Any] = {}
+                if next_token:
+                    kwargs["nextToken"] = next_token
+                response = self._management_client.list_foundation_models(**kwargs)
+                summaries = response.get("modelSummaries") or []
+                for summary in summaries:
+                    if isinstance(summary, dict):
+                        models.append(summary)
+                next_token = response.get("nextToken")
+                if not next_token:
+                    break
+            return models
+        except (NoCredentialsError, ClientError, BotoCoreError) as exc:
+            raise BedrockInvocationError(str(exc)) from exc
 
 
 # --- Helpers -----------------------------------------------------------------
