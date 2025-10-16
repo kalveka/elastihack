@@ -48,6 +48,29 @@ class MetaAgentResponse(BaseModel):
     context: Dict[str, Any]
 
 
+@app.get("/", include_in_schema=False)
+def root() -> Dict[str, str]:
+    return {
+        "message": "Azion Meta-Agent service is running. Visit /docs for interactive documentation."
+    }
+
+
+@app.get("/meta-agent", include_in_schema=False)
+def meta_agent_get() -> Dict[str, Any]:
+    return {
+        "message": "Use POST /meta-agent with JSON payload to run the pipeline.",
+        "example": {
+            "prompt": "Draft a customer onboarding assistant for EU banking.",
+            "requirements": {
+                "industry": "finance",
+                "data_sensitivity": "restricted",
+                "regulatory_frameworks": ["GDPR"],
+            },
+            "max_context": 3,
+        },
+    }
+
+
 @app.get("/health")
 def healthcheck() -> Dict[str, str]:
     return {"status": "ok"}
