@@ -181,8 +181,7 @@ def invoke_with_fallback(model_id: str, prompt: str, *, temperature: float = 0.2
 
         return normalized
     except BedrockInvocationError:
-        # Bedrock is optional for the hackathon experience. If credentials are
-        # not present we fall back to a stub response that mimics Claude's JSON.
+       #fall back to a stub response that mimics Claude's JSON.
         return {
             "output": {
                 "text": "Hackathon fallback: unable to reach Bedrock."

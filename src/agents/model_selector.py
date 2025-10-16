@@ -250,32 +250,41 @@ def _summarize_bedrock_error(message: str) -> str:
 CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
 
-def _extract_json_snippet(text: str) -> str:
-    """Pull the first JSON object found within the text."""
+def _parse_selector_output(text: str) -> Dict[str, Any]:
+    """Attempt to parse the selector response into JSON."""
 
     if not isinstance(text, str):
         raise ValueError("Non-string response received from model selector.")
 
     match = CODE_BLOCK_PATTERN.search(text)
     candidate = match.group(1) if match else text
+    decoder = json.JSONDecoder()
 
-    try:
-        start_index = candidate.index("{")
-    except ValueError as exc:
-        raise ValueError("No JSON object detected in model selector response.") from exc
+    def _try_decode(start_idx: int) -> Optional[Dict[str, Any]]:
+        try:
+            payload, end = decoder.raw_decode(candidate, start_idx)
+        except json.JSONDecodeError:
+            return None
 
-    depth = 0
-    for index in range(start_index, len(candidate)):
-        char = candidate[index]
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                snippet = candidate[start_index : index + 1]
-                return snippet
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list):
+            # Sometimes models wrap the object in a single-element list.
+            for item in payload:
+                if isinstance(item, dict):
+                    return item
+            return {"candidate_models": payload}
+        # Ignore other types (strings, numbers).
+        return None
 
-    raise ValueError("Incomplete JSON object returned by model selector.")
+    for index, char in enumerate(candidate):
+        if char not in "{[":
+            continue
+        parsed = _try_decode(index)
+        if parsed is not None:
+            return parsed
+
+    raise ValueError("Unable to locate JSON object in model selector response.")
 
 
 def _prepare_candidates(
@@ -476,12 +485,26 @@ class ModelSelector:
             parsed = json.loads(text)
         except json.JSONDecodeError:
             try:
-                json_snippet = _extract_json_snippet(text)
-                parsed = json.loads(json_snippet)
+                parsed = _parse_selector_output(text)
             except ValueError as exc:
                 parse_error = str(exc)
             except json.JSONDecodeError as exc:
                 parse_error = f"Invalid JSON from model selector: {exc}"
+
+        if parse_error:
+            logger.warning("Model selector response parsing failed: %s", parse_error)
+            fallback_structure["governance_notes"].append(
+                f"Model selector response was not valid JSON: {parse_error}"
+            )
+            fallback_structure["bedrock_status"]["error"] = parse_error
+            fallback_structure["bedrock_status"]["catalog_count"] = len(bedrock_catalog)
+            fallback_structure["raw_selector_output"] = text
+            return fallback_structure
+
+        if isinstance(parsed, list):
+            parsed = parsed[0] if parsed and isinstance(parsed[0], dict) else None
+            if parsed is None:
+                parse_error = "Model selector returned a top-level list without an object payload."
 
         if parse_error:
             logger.warning("Model selector response parsing failed: %s", parse_error)
@@ -498,6 +521,8 @@ class ModelSelector:
                 "Model selector returned an unexpected payload; falling back to defaults."
             )
             fallback_structure["bedrock_status"]["error"] = "Model selector returned non-dict payload."
+            fallback_structure["bedrock_status"]["catalog_count"] = len(bedrock_catalog)
+            fallback_structure["raw_selector_output"] = text
             return fallback_structure
 
         raw_candidates = parsed.get("candidate_models")
